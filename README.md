@@ -1,4 +1,4 @@
-Project Name : Community
+# Community
 
 Backend : FastAPI  
 Frontend : Vanilla JS  
