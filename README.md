@@ -1,4 +1,4 @@
-##커뮤니티
+커뮤니티
 
 Backend : FastAPI  
 Frontend : Vanilla JS  
