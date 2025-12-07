@@ -41,7 +41,7 @@ def save_image_file(upload_file) -> str | None:
     return filename
 
 # --- 검증 및 DB 저장 함수 ---
-def edit_profile_db(image_bytes_or_upload, email: str, password: str, password_confirm: str, nickname: str) -> dict:
+def edit_profile_db(image_bytes_or_upload, email: str, password: str = None, password_confirm: str = None, nickname: str = None) -> dict:
     """
     - image_bytes_or_upload: raw bytes OR an object with .read() returning bytes
     - Returns dict like {"success": bool, "message": str, "data": {...}}
@@ -81,53 +81,93 @@ def edit_profile_db(image_bytes_or_upload, email: str, password: str, password_c
     if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
         return {"success": False, "message": "유효하지 않은 이메일 형식입니다."}
 
-    # 3) 비밀번호 검사
-    if not password:
-        return {"success": False, "message": "비밀번호를 입력해주세요"}
-    if len(password) < 8 or len(password) > 20:
-        return {"success": False, "message": "비밀번호 형식을 확인해주세요 (8~20자)"}
-    if not re.search(r"[A-Z]", password):
-        return {"success": False, "message": "비밀번호 형식을 확인해주세요 (대문자 포함)"}
-    if not re.search(r"[a-z]", password):
-        return {"success": False, "message": "비밀번호 형식을 확인해주세요 (소문자 포함)"}
-    if not re.search(r"\d", password):
-        return {"success": False, "message": "비밀번호 형식을 확인해주세요 (숫자 포함)"}
-    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
-        return {"success": False, "message": "비밀번호 형식을 확인해주세요 (특수문자 포함)"}
+    # 3) 비밀번호 검사 (only if password is provided - for profile updates, password is optional)
+    if password and password.strip():
+        if len(password) < 8 or len(password) > 20:
+            return {"success": False, "message": "비밀번호 형식을 확인해주세요 (8~20자)"}
+        if not re.search(r"[A-Z]", password):
+            return {"success": False, "message": "비밀번호 형식을 확인해주세요 (대문자 포함)"}
+        if not re.search(r"[a-z]", password):
+            return {"success": False, "message": "비밀번호 형식을 확인해주세요 (소문자 포함)"}
+        if not re.search(r"\d", password):
+            return {"success": False, "message": "비밀번호 형식을 확인해주세요 (숫자 포함)"}
+        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+            return {"success": False, "message": "비밀번호 형식을 확인해주세요 (특수문자 포함)"}
+        
+        # 4) 비밀번호 확인
+        if not password_confirm:
+            return {"success": False, "message": "비밀번호를 한번 더 입력해주세요"}
+        if password != password_confirm:
+            return {"success": False, "message": "비밀번호 확인과 다릅니다"}
 
-    # 4) 비밀번호 확인
-    if not password_confirm:
-        return {"success": False, "message": "비밀번호를 한번 더 입력해주세요"}
-    if password != password_confirm:
-        return {"success": False, "message": "비밀번호 확인과 다릅니다"}
+    # 5) 닉네임 검사 (only if provided)
+    if nickname:
+        if len(nickname) < 2 or len(nickname) > 10:
+            return {"success": False, "message": "닉네임 형식을 확인해주세요 (2~10자)"}
+        if not re.match(r"^[가-힣a-zA-Z0-9]+$", nickname):
+            return {"success": False, "message": "닉네임 형식을 확인해주세요 (한글, 영어, 숫자만 가능)"}
 
-    # 5) 닉네임 검사
-    if len(nickname) < 2 or len(nickname) > 10:
-        return {"success": False, "message": "닉네임 형식을 확인해주세요 (2~10자)"}
-    if not re.match(r"^[가-힣a-zA-Z0-9]+$", nickname):
-        return {"success": False, "message": "닉네임 형식을 확인해주세요 (한글, 영어, 숫자만 가능)"}
+    # 6) DB 중복 이메일 검사 및 저장 (또는 업데이트)
+    try:
+        with get_session() as session:
+            statement = select(User).where(User.email == email)
+            existing = session.exec(statement).first()
+            
+            if existing:
+                # Update existing user profile
+                updated = False
+                if password:
+                    hashed = hash_password(password)
+                    existing.hashed_password = hashed
+                    updated = True
+                if nickname and nickname.strip():
+                    existing.nickname = nickname.strip()
+                    updated = True
+                if filename:
+                    existing.profile_image = filename
+                    updated = True
+                
+                if not updated:
+                    # No changes made
+                    user_data = UserResponse.model_validate(existing).model_dump(mode='json')
+                    return {"success": True, "message": "변경사항이 없습니다.", "data": user_data}
+                
+                existing.updated_at = datetime.utcnow()
+                session.add(existing)
+                session.commit()
+                session.refresh(existing)
+                
+                user_data = UserResponse.model_validate(existing).model_dump(mode='json')
+                return {"success": True, "message": "프로필이 업데이트되었습니다.", "data": user_data}
+            else:
+                # User doesn't exist - this should not happen for profile updates
+                # If trying to update but user doesn't exist, return error
+                if not password:
+                    return {"success": False, "message": "사용자를 찾을 수 없습니다. 로그인 후 다시 시도해주세요."}
+                
+                # Create new user - password and nickname are required for signup
+                if not nickname or not nickname.strip():
+                    return {"success": False, "message": "닉네임을 입력해주세요"}
+                
+                hashed = hash_password(password)
+                now = datetime.utcnow()
+                user = User(
+                    email=email,
+                    hashed_password=hashed,
+                    nickname=nickname.strip(),
+                    profile_image=filename,
+                    created_at=now,
+                    updated_at=now
+                )
+                session.add(user)
+                session.commit()
+                session.refresh(user)
 
-    # 6) DB 중복 이메일 검사 및 저장
-    with get_session() as session:
-        statement = select(User).where(User.email == email)
-        existing = session.exec(statement).first()
-        if existing:
-            return {"success": False, "message": "이미 등록된 이메일입니다."}
-
-        hashed = hash_password(password)
-        now = datetime.utcnow()
-        user = User(
-            email=email,
-            hashed_password=hashed,
-            nickname=nickname,
-            profile_image=filename,
-            created_at=now,
-            updated_at=now
-        )
-        session.add(user)
-        session.commit()
-        session.refresh(user)
-
-        # Build response data
-        user_data = UserResponse.from_orm(user).dict()
-        return {"success": True, "message": "회원정보 수정이 완료되었습니다.", "data": user_data}
+                # Build response data - use mode='json' to serialize datetime to ISO format strings
+                user_data = UserResponse.model_validate(user).model_dump(mode='json')
+                return {"success": True, "message": "회원가입이 완료되었습니다.", "data": user_data}
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"Database error in edit_profile_db: {error_trace}")
+        return {"success": False, "message": f"데이터베이스 오류가 발생했습니다: {str(e)}"}

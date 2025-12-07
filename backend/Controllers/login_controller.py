@@ -1,10 +1,12 @@
 from fastapi import HTTPException
 import re
+from passlib.context import CryptContext
+from sqlmodel import select
 
-# 임시 사용자 데이터베이스 (예시)
-users = {
-    "example@example.com": {"password": "Test1234!"}
-}
+from Database.database import get_session
+from Models.signin_model import User
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # ==========================
 # 이메일 유효성 검사
@@ -35,10 +37,30 @@ def validate_password(password: str):
 # ==========================
 def login_user(email: str, password: str):
     validate_email(email)
-    validate_password(password)
+    # Don't validate password format for login - just check if it exists
+    if not password:
+        raise HTTPException(status_code=400, detail="비밀번호를 입력해주세요.")
 
-    if email not in users or users[email]["password"] != password:
-        raise HTTPException(status_code=401, detail="아이디 또는 비밀번호를 확인해주세요.")
+    # Check database for user
+    with get_session() as session:
+        statement = select(User).where(User.email == email)
+        user = session.exec(statement).first()
+        
+        if not user:
+            raise HTTPException(status_code=401, detail="아이디 또는 비밀번호를 확인해주세요.")
+        
+        # Verify password using bcrypt
+        if not pwd_context.verify(password, user.hashed_password):
+            raise HTTPException(status_code=401, detail="아이디 또는 비밀번호를 확인해주세요.")
 
     # 로그인 성공 시 반환
-    return {"message": "로그인 성공", "redirect_to": "/posts"}
+    return {
+        "message": "로그인 성공",
+        "redirect_to": "/posts",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "nickname": user.nickname,
+            "profile_image": user.profile_image
+        }
+    }

@@ -4,7 +4,7 @@ from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
 
-from Controllers.makepost_controller import create_post_in_db, list_posts_from_db
+from Controllers.makepost_controller import create_post_in_db, list_posts_from_db, get_post_from_db
 from Schemas.makepost_schemas import PostCreate, PostResponse
 from Database.database import init_db
 
@@ -55,5 +55,17 @@ async def add_post(
 
 @router.get("/", response_model=List[PostResponse])
 def get_posts():
-    posts = list_posts_from_db()
-    return posts
+    """
+    Get all posts from database
+    """
+    try:
+        posts = list_posts_from_db()
+        # FastAPI will automatically serialize using response_model
+        # Return empty list if no posts
+        return list(posts) if posts else []
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"Error in get_posts: {error_trace}")
+        # Return empty list on error instead of crashing
+        return []

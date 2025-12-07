@@ -24,3 +24,54 @@ def list_posts_from_db() -> List[Post]:
         statement = select(Post).order_by(Post.created_at.desc())
         results = session.exec(statement).all()
         return results
+
+def get_post_from_db(post_id: int) -> Post:
+    """
+    Get a single post from database by ID
+    """
+    with get_session() as session:
+        post = session.get(Post, post_id)
+        if not post:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Post not found")
+        return post
+
+def update_post_in_db(post_id: int, title: str, content: str, image_filename: str = None) -> Post:
+    """
+    Update an existing post in the database
+    """
+    with get_session() as session:
+        post = session.get(Post, post_id)
+        if not post:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Post not found")
+        
+        post.title = title
+        post.content = content
+        if image_filename:
+            post.image_filename = image_filename
+        
+        session.add(post)
+        session.commit()
+        session.refresh(post)
+        return post
+
+def update_post_in_db(post_id: int, title: str, content: str, image_filename: str = None) -> Post:
+    """
+    Update an existing post in the database
+    """
+    with get_session() as session:
+        post = session.get(Post, post_id)
+        if not post:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Post not found")
+        
+        post.title = title
+        post.content = content
+        if image_filename:
+            post.image_filename = image_filename
+        
+        session.add(post)
+        session.commit()
+        session.refresh(post)
+        return post

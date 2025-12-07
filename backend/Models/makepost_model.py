@@ -3,6 +3,8 @@ from datetime import datetime
 from sqlmodel import SQLModel, Field
 
 class Post(SQLModel, table=True):
+    __tablename__ = "posts"
+    
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str = Field(max_length=26)
     content: str
