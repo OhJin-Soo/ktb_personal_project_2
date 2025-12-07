@@ -1,4 +1,4 @@
-커뮤니티
+Project Name : Communuty
 
 Backend : FastAPI  
 Frontend : Vanilla JS  
